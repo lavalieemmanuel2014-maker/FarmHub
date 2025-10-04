@@ -1,6 +1,6 @@
 {
-  "name": "FarmHub",
-  "description": "FarmHub: A multipurpose app for agribusiness that helps farmers and agriproduce entrepreneurs to connect, learn, and trade.",
+  "name": "FarmHuub",
+  "description": "FarmHuub: A multipurpose app for agribusiness that helps farmers and agriproduce entrepreneurs to connect, learn, and trade.",
   "requestFramePermissions": [
     "camera",
     "microphone"

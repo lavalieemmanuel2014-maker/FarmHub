@@ -2,9 +2,9 @@
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { GoogleGenAI, Chat } from "@google/genai";
+import { GoogleGenAI, Chat, GenerateContentResponse, FunctionDeclaration, Type } from "@google/genai";
 
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useCallback } = React;
 
 declare const L: any; // Declare Leaflet and Geoman global
 declare const jspdf: any; // Declare jsPDF and autoTable global
@@ -82,7 +82,7 @@ const Header = ({ logo, onLogoClick }: { logo: string | null; onLogoClick: () =>
     <div className="logo" onClick={onLogoClick} style={{ cursor: 'pointer' }} title="Change logo">
       {logo ? <img src={logo} alt="Farm Logo" className="header-logo-img" /> : 'FH'}
     </div>
-    <h1>FarmHub</h1>
+    <h1>FarmHuub</h1>
   </header>
 );
 
@@ -149,14 +149,22 @@ const ScanPage = () => {
 
     try {
       const imagePart = await imageToGenerativePart(file);
-      const prompt = `You are an expert botanist and soil scientist for West African agriculture. Analyze this image. 
-      
-If it's a plant, identify it and provide:
+      const prompt = `You are an expert botanist, plant pathologist, and soil scientist for West African agriculture. Analyze this image. 
+
+If it's a healthy plant, identify it and provide:
 1.  **Plant Name:** (Common and Scientific)
 2.  **Uses for Humans:** (Food, traditional medicine, etc.)
 3.  **Uses for Animals:** (Fodder, habitat, etc.)
 4.  **Environmental Role:** (Nitrogen fixation, soil stabilization, etc.)
 5.  **Cultivation Tips:** (Basic advice for local farmers)
+
+If it's a diseased plant, provide a diagnosis:
+1.  **Plant Identification:** The name of the plant.
+2.  **Disease Diagnosis:** The name of the suspected disease (e.g., Cassava Mosaic Disease, Black Sigatoka). Be specific.
+3.  **Causes & Symptoms:** Describe the visual symptoms and explain the common causes (fungal, bacterial, viral, nutrient deficiency).
+4.  **Treatment - Organic/Cultural Methods:** Provide actionable, low-cost recommendations suitable for small-scale farmers (e.g., removing infected leaves, crop rotation, natural sprays).
+5.  **Treatment - Chemical Methods:** Suggest appropriate chemical treatments (fungicides, pesticides) if applicable, including a disclaimer to use them safely and according to instructions.
+6.  **Prevention:** List key strategies to prevent future outbreaks.
 
 If it's a soil, analyze it and provide:
 1.  **Soil Type:** (e.g., Loamy, Sandy, Clay)
@@ -164,7 +172,7 @@ If it's a soil, analyze it and provide:
 3.  **Potential Nutrient Status:** (What the visuals might imply)
 4.  **Natural Improvement Recommendations:** (e.g., composting, cover crops, local organic matter)
 
-Present the information clearly with bold headings.`;
+Base your analysis on common crops, diseases, and conditions found in Sierra Leone. Present the information clearly with bold headings.`;
       
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -182,7 +190,7 @@ Present the information clearly with bold headings.`;
   
   return (
     <div>
-      <h2>Scan Plant & Soil</h2>
+      <h2>Crop Disease Diagnosis</h2>
       <div className="card">
         <h3>Upload an Image for Analysis</h3>
         <input type="file" id="file-upload" accept="image/*" onChange={handleFileChange} ref={fileInputRef} style={{display: 'none'}} />
@@ -330,24 +338,96 @@ Provide a detailed analysis of their combined properties. The output should be w
 };
 
 
-const MarketPage = () => {
-    const products = [
-        { name: "Fresh Cassava", price: "SLL 50,000/bag", seller: "Fatu Kamara", icon: "fa-solid fa-carrot" },
-        { name: "Organic Palm Oil", price: "SLL 30,000/L", seller: "Musa Bangura", icon: "fa-solid fa-bottle-droplet" },
-        { name: "Groundnuts", price: "SLL 25,000/kg", seller: "Aminata Sesay", icon: "fa-solid fa-seedling" },
-        { name: "Sweet Potatoes", price: "SLL 40,000/bag", seller: "John Koroma", icon: "fa-solid fa-leaf" },
+// --- COMMUNITY SUB-PAGES ---
+const MarketSubPage = () => {
+    const initialProducts = [
+        { id: 1, name: "Fresh Cassava", price: "SLL 50,000/bag", seller: "Fatu Kamara", icon: "fa-solid fa-carrot", image: null },
+        { id: 2, name: "Organic Palm Oil", price: "SLL 30,000/L", seller: "Musa Bangura", icon: "fa-solid fa-bottle-droplet", image: null },
+        { id: 3, name: "Groundnuts", price: "SLL 25,000/kg", seller: "Aminata Sesay", icon: "fa-solid fa-seedling", image: null },
+        { id: 4, name: "Sweet Potatoes", price: "SLL 40,000/bag", seller: "John Koroma", icon: "fa-solid fa-leaf", image: null },
     ];
+
+    const [products, setProducts] = useState(initialProducts);
+    const [showForm, setShowForm] = useState(false);
+    const [newItem, setNewItem] = useState({ name: '', price: '', description: '' });
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setNewItem(prev => ({ ...prev, [name]: value }));
+    };
+    
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setImageFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleListProduct = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newItem.name || !newItem.price) return;
+        
+        const newProduct = {
+            id: Date.now(),
+            name: newItem.name,
+            price: newItem.price,
+            seller: "You",
+            icon: "fa-solid fa-user-tag",
+            image: imagePreview
+        };
+        
+        setProducts(prev => [newProduct, ...prev]);
+        
+        // Reset form
+        setShowForm(false);
+        setNewItem({ name: '', price: '', description: '' });
+        setImageFile(null);
+        setImagePreview(null);
+    };
+
     return (
         <div>
-            <h2>Local & National Market</h2>
-             <button className="button" style={{marginBottom: '20px'}}>
+             <button className="button" style={{marginBottom: '20px'}} onClick={() => setShowForm(!showForm)}>
                 <i className="fa-solid fa-plus" style={{marginRight: '8px'}}></i>
-                Sell Your Produce
+                {showForm ? 'Cancel' : 'Sell Your Produce'}
             </button>
+            
+            {showForm && (
+                <div className="card">
+                    <h3>List a New Item</h3>
+                    <form onSubmit={handleListProduct} className="add-transaction-form" style={{borderTop: 'none', paddingTop: '0', marginTop: '0'}}>
+                        <label htmlFor="product-image-upload" className="file-input-label">
+                            {imagePreview ? <img src={imagePreview} alt="Preview" className="logo-preview" style={{maxHeight: '80px'}} /> : <span><i className="fa-solid fa-camera"></i> Add Photo</span>}
+                        </label>
+                        <input id="product-image-upload" type="file" accept="image/*" onChange={handleImageChange} style={{display: 'none'}} />
+
+                        <label>Product Name</label>
+                        <input type="text" name="name" className="input" placeholder="e.g., Organic Groundnuts" value={newItem.name} onChange={handleInputChange} required />
+
+                        <label>Price</label>
+                        <input type="text" name="price" className="input" placeholder="e.g., SLL 30,000 / kg" value={newItem.price} onChange={handleInputChange} required />
+                        
+                        <label>Description (Optional)</label>
+                        <textarea name="description" className="textarea small" placeholder="Describe your product..." value={newItem.description} onChange={handleInputChange}></textarea>
+                        
+                        <button className="button" type="submit">List Item for Sale</button>
+                    </form>
+                </div>
+            )}
+
             <div className="product-grid">
                 {products.map(p => (
-                    <div className="product-card" key={p.name}>
-                        <div className="product-image"><i className={p.icon}></i></div>
+                    <div className="product-card" key={p.id}>
+                        <div className="product-image">
+                            {p.image ? <img src={p.image} alt={p.name} style={{width: '100%', height: '100%', objectFit: 'cover'}} /> : <i className={p.icon}></i>}
+                        </div>
                         <div className="product-info">
                             <h4>{p.name}</h4>
                             <p>by {p.seller}</p>
@@ -359,8 +439,6 @@ const MarketPage = () => {
         </div>
     );
 };
-
-// --- COMMUNITY SUB-PAGES ---
 
 const FeedSubPage = ({ communityPosts, addCommunityPost }: { communityPosts: any[], addCommunityPost: (post: any) => void }) => {
     const [postContent, setPostContent] = useState('');
@@ -610,9 +688,9 @@ const MeetingsSubPage = () => {
 
 const VideoSubPage = () => {
     // Script generation state
-    const [projectName, setProjectName] = useState('FarmHub Launch Video');
+    const [projectName, setProjectName] = useState('FarmHuub Launch Video');
     const [targetAudience, setTargetAudience] = useState('Small-to-medium scale farmers, agricultural entrepreneurs, and farming cooperatives in Sierra Leone.');
-    const [keyMessage, setKeyMessage] = useState('FarmHub is an essential, modern tool for farmers in Sierra Leone, highlighting its key benefits: ease of use, empowerment through knowledge, and business growth.');
+    const [keyMessage, setKeyMessage] = useState('FarmHuub is an essential, modern tool for farmers in Sierra Leone, highlighting its key benefits: ease of use, empowerment through knowledge, and business growth.');
     const [videoLength, setVideoLength] = useState('30 seconds');
     const [videoStyle, setVideoStyle] = useState('Inspirational');
     const [loading, setLoading] = useState(false);
@@ -830,6 +908,7 @@ const CommunityPage = ({ communityPosts, addCommunityPost }: { communityPosts: a
     switch (activeSubTab) {
       case 'feed': return <FeedSubPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} />;
       case 'chats': return <ChatsSubPage />;
+      case 'market': return <MarketSubPage />;
       case 'calls': return <CallsSubPage />;
       case 'meetings': return <MeetingsSubPage />;
       case 'video': return <VideoSubPage />;
@@ -840,6 +919,7 @@ const CommunityPage = ({ communityPosts, addCommunityPost }: { communityPosts: a
   const tabs = [
     { id: 'feed', label: 'Feed', icon: 'fa-solid fa-rss' },
     { id: 'chats', label: 'Chats', icon: 'fa-solid fa-comments' },
+    { id: 'market', label: 'Market', icon: 'fa-solid fa-store' },
     { id: 'calls', label: 'Calls', icon: 'fa-solid fa-phone-volume' },
     { id: 'meetings', label: 'Meetings', icon: 'fa-solid fa-video' },
     { id: 'video', label: 'Video', icon: 'fa-solid fa-film' },
@@ -1120,7 +1200,7 @@ Generate only the text for this document. The visual sketch of the map will be a
       setCalculatedArea(survey.area);
       setLandSize(survey.area.toFixed(4));
       setSurveyCoordinates(coords);
-      setCurrentSurveyGeoJSON(survey.geojson);
+setCurrentSurveyGeoJSON(survey.geojson);
       setShowSaveForm(false);
       
       mapRef.current.fitBounds(surveyLayer.getBounds().pad(0.1));
@@ -1343,7 +1423,7 @@ const AIHubPage = ({ language, setLanguage }: { language: string; setLanguage: (
     const newChat = ai.chats.create({
         model: 'gemini-2.5-flash',
         config: {
-            systemInstruction: `You are an expert agricultural assistant for farmers in West Africa. Your name is 'FarmHub Agri-Bot'. Answer questions about agriculture, crop diseases, food production, supply chains, and climate change. Provide helpful, accurate, and easy-to-understand information tailored to the local context. The user has selected their language as ${langName}. You MUST respond in ${langName}. Start your very first message by introducing yourself in ${langName}.`
+            systemInstruction: `You are an expert agricultural assistant for farmers in West Africa. Your name is 'FarmHuub Agri-Bot'. Answer questions about agriculture, crop diseases, food production, supply chains, and climate change. Provide helpful, accurate, and easy-to-understand information tailored to the local context. The user has selected their language as ${langName}. You MUST respond in ${langName}. Start your very first message by introducing yourself in ${langName}.`
         },
     });
     setChat(newChat);
@@ -1521,7 +1601,7 @@ const FinanceSubPage = ({ logo, onLogoChange }: { logo: string | null; onLogoCha
     // --- STATE FOR DOCUMENT TEMPLATE GENERATOR ---
     const [docType, setDocType] = useState('Invoice');
     const [docData, setDocData] = useState({
-        from: 'FarmHub Inc.\n1 Lavalie Street\nBonthe District',
+        from: 'FarmHuub Inc.\n1 Lavalie Street\nBonthe District',
         to: '',
         items: [{ description: '', quantity: 1, price: 0 }] as DocItem[],
         notes: 'Thank you for your business.',
@@ -2261,7 +2341,7 @@ Provide a professional, well-structured response suitable for a formal document.
 
     const handlePostToCommunity = () => {
         const newPost = {
-            author: "FarmHub HR",
+            author: "FarmHuub HR",
             avatar: "HR",
             content: `**📢 JOB OPENING: ${jobTitle}**\n\n${result}`,
             image: false
@@ -2877,6 +2957,258 @@ Respond in ${langName}.
     );
 };
 
+// --- NEW CALL AGENT PAGE ---
+
+// Call simulation UI
+const LiveCallUI = ({ farmName, callData, onCallEnd }: { farmName: string, callData: any, onCallEnd: (log: any) => void }) => {
+    const [status, setStatus] = useState('Connecting...');
+    const [transcript, setTranscript] = useState<{ speaker: 'agent' | 'client'; text: string }[]>([]);
+    const transcriptEndRef = useRef<HTMLDivElement>(null);
+    const chatRef = useRef<Chat | null>(null);
+    const clientScript = useRef([
+        "Hello, this is Fatu.",
+        "Oh, hello. Yes, I have a moment. What is this about?",
+        "Yes, that works for me. What time were you thinking?",
+        "10 AM sounds perfect.",
+        "Excellent. Thank you for calling. Goodbye."
+    ]);
+    const scriptIndex = useRef(0);
+    
+    const scheduleMeeting: FunctionDeclaration = {
+      name: 'scheduleMeeting',
+      parameters: {
+        type: Type.OBJECT,
+        description: 'Schedules a meeting with a client.',
+        properties: {
+          dateTime: { type: Type.STRING, description: 'The date and time of the meeting in ISO 8601 format.' },
+          topic: { type: Type.STRING, description: 'The topic of the meeting.' },
+          attendee: { type: Type.STRING, description: 'The name of the person attending the meeting.'},
+        },
+        required: ['dateTime', 'topic', 'attendee'],
+      },
+    };
+
+    const addTranscript = (speaker: 'agent' | 'client', text: string) => {
+        setTranscript(prev => [...prev, { speaker, text }]);
+    };
+
+    const handleClientResponse = useCallback(async () => {
+        if (!chatRef.current || scriptIndex.current >= clientScript.current.length) {
+            endCall({ success: false, reason: "Client ended conversation." });
+            return;
+        }
+
+        const clientMessage = clientScript.current[scriptIndex.current];
+        scriptIndex.current++;
+        
+        // Add a small delay to simulate thinking time
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        addTranscript('client', clientMessage);
+        
+        // Send client's message to the AI and wait for the response
+        await processAIResponse(clientMessage);
+    }, []);
+
+    const endCall = (result: any) => {
+        setStatus('Call Ended');
+        const finalLog = {
+            id: Date.now(),
+            contact: callData.contact,
+            objective: callData.objective,
+            outcome: result,
+            transcript: transcript,
+        };
+        setTimeout(() => onCallEnd(finalLog), 2000);
+    };
+
+    const processAIResponse = useCallback(async (message: string) => {
+        if (!chatRef.current) return;
+        
+        let fullResponse = "";
+        try {
+            const stream = await chatRef.current.sendMessageStream({ message });
+            let lastText = "";
+            for await (const chunk of stream) {
+                lastText = chunk.text; // Keep track of the latest text from the stream
+                
+                if(chunk.functionCalls && chunk.functionCalls.length > 0){
+                    const fc = chunk.functionCalls[0];
+                    if(fc.name === 'scheduleMeeting'){
+                        const { dateTime, topic, attendee } = fc.args;
+                        setStatus('Scheduling...');
+                        addTranscript('agent', `[Function Call: Scheduling meeting for ${attendee} about "${topic}" at ${new Date(dateTime).toLocaleString()}]`);
+                        
+                        // "Execute" the function and send result back to model
+                        const functionResponse = [{
+                            functionCall: fc,
+                            functionResponse: { name: 'scheduleMeeting', response: { result: "Meeting scheduled successfully." }}
+                        }];
+                        // We need a non-streaming call here to send back function result
+                        const finalResponse = await chatRef.current.sendMessage({ message: JSON.stringify(functionResponse) });
+                        addTranscript('agent', finalResponse.text);
+                        endCall({ success: true, details: `Meeting scheduled for ${new Date(dateTime).toLocaleString()}` });
+                        return; // End processing here
+                    }
+                }
+            }
+            // Once streaming is done, add the final complete message
+            addTranscript('agent', lastText);
+
+            // Once the full response is received, trigger the next client response
+            handleClientResponse();
+
+        } catch (error) {
+            console.error("AI call error:", error);
+            addTranscript('agent', "[Error communicating with AI]");
+            endCall({ success: false, reason: "AI connection error." });
+        }
+    }, [handleClientResponse]);
+    
+    // Initialize and start the call simulation
+    useEffect(() => {
+        const farm = farmName || "a local farm";
+        const newChat = ai.chats.create({
+            model: 'gemini-2.5-flash',
+            config: {
+                systemInstruction: `You are a friendly and professional AI assistant making a phone call for a farmer at "${farm}". Your only goal is to schedule a meeting with the client. You must use the 'scheduleMeeting' function to do this. Keep your responses very brief and conversational, like a real phone call. Do not use markdown. Start the conversation by introducing yourself.`,
+                tools: [{ functionDeclarations: [scheduleMeeting] }],
+            },
+        });
+        chatRef.current = newChat;
+
+        setStatus('Dialing...');
+        
+        const startConversation = async () => {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            setStatus('In Progress');
+            await processAIResponse(`The user wants you to call ${callData.contact} to ${callData.objective}. Start the call.`);
+        };
+
+        startConversation();
+
+    }, [farmName, callData.contact, callData.objective]);
+
+    useEffect(() => {
+        transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [transcript]);
+
+    return (
+        <div className="modal-overlay">
+            <div className="call-agent-ui">
+                <div className="call-agent-header">
+                    <div className="avatar large"><i className="fa-solid fa-robot"></i></div>
+                    <h3>Calling {callData.contact}</h3>
+                    <p>Objective: {callData.objective}</p>
+                    <div className={`call-status ${status.replace('...', '').replace(' ', '-').toLowerCase()}`}>{status}</div>
+                </div>
+                <div className="call-transcript">
+                    {transcript.map((msg, index) => (
+                        <div key={index} className={`transcript-message ${msg.speaker === 'client' ? 'client-message' : 'agent-message'}`}>
+                            {msg.text}
+                        </div>
+                    ))}
+                    <div ref={transcriptEndRef}></div>
+                </div>
+                <div className="call-agent-footer">
+                    <button className="call-control-btn end-call" onClick={() => endCall({ success: false, reason: "Call ended by user." })}>
+                        <i className="fa-solid fa-phone-slash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const CallAgentPage = () => {
+    const [farmName] = useState(localStorage.getItem('farmHubFarmName') || 'Your Farm');
+    const [contact, setContact] = useState('Fatu Kamara');
+    const [objective, setObjective] = useState('Schedule a meeting to discuss cassava prices.');
+    const [callLog, setCallLog] = useState<any[]>([]);
+    const [isCalling, setIsCalling] = useState(false);
+    const [activeCallData, setActiveCallData] = useState<any>(null);
+    const [error, setError] = useState('');
+
+    const contacts = ["Fatu Kamara", "Musa Bangura", "Aminata Sesay", "John Koroma"];
+
+    const handleStartCall = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!contact.trim() || !objective.trim()) {
+            setError('Please select a contact and define the call objective.');
+            return;
+        }
+        setError('');
+        setActiveCallData({ contact, objective });
+        setIsCalling(true);
+    };
+
+    const handleCallEnd = (logEntry: any) => {
+        setCallLog(prev => [logEntry, ...prev]);
+        setIsCalling(false);
+        setActiveCallData(null);
+    };
+
+    const getOutcomeIcon = (outcome: any) => {
+        if (outcome.success) {
+            return <i className="fa-solid fa-check-circle success"></i>;
+        }
+        return <i className="fa-solid fa-times-circle failure"></i>;
+    };
+
+    return (
+        <div>
+            {isCalling && activeCallData && (
+                <LiveCallUI 
+                    farmName={farmName}
+                    callData={activeCallData} 
+                    onCallEnd={handleCallEnd} 
+                />
+            )}
+            <h2>AI Call Agent</h2>
+            <div className="card">
+                <h3>New Automated Call</h3>
+                <p className="card-subtitle">Have the AI agent call a client to schedule a meeting. This is a simulation.</p>
+                <form onSubmit={handleStartCall}>
+                    <label htmlFor="contact-select">Contact</label>
+                    <select id="contact-select" className="input" value={contact} onChange={e => setContact(e.target.value)}>
+                        {contacts.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+
+                    <label htmlFor="call-objective">Call Objective</label>
+                    <textarea id="call-objective" className="textarea" value={objective} onChange={e => setObjective(e.target.value)}></textarea>
+                    
+                    {error && <p className="error-text">{error}</p>}
+
+                    <button className="button" type="submit" disabled={isCalling}>
+                        <i className="fa-solid fa-phone-volume"></i> Start Automated Call
+                    </button>
+                </form>
+            </div>
+            <div className="card">
+                <h3>Call Log</h3>
+                {callLog.length === 0 ? (
+                    <p style={{color: 'var(--text-light)'}}>No calls have been made yet.</p>
+                ) : (
+                    <ul className="call-log-list">
+                        {callLog.map(log => (
+                            <li key={log.id} className="call-log-item">
+                                <div className="call-log-icon">{getOutcomeIcon(log.outcome)}</div>
+                                <div className="call-log-details">
+                                    <strong>Call to {log.contact}</strong>
+                                    <p className="call-log-objective">Objective: {log.objective}</p>
+                                    <p className="call-log-outcome">
+                                        Outcome: {log.outcome.success ? `Success - ${log.outcome.details}` : `Failed - ${log.outcome.reason}`}
+                                    </p>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        </div>
+    );
+};
+
+
 // --- MAIN APP ---
 const SidebarNav = ({ activeTab, setActiveTab, navButtons, logo, onLogoClick }) => (
     <nav className="sidebar-nav" aria-label="Main Navigation">
@@ -2884,7 +3216,7 @@ const SidebarNav = ({ activeTab, setActiveTab, navButtons, logo, onLogoClick }) 
         <div className="logo" onClick={onLogoClick} style={{ cursor: 'pointer' }} title="Change logo" role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onLogoClick()}>
           {logo ? <img src={logo} alt="Farm Logo" className="header-logo-img" /> : 'FH'}
         </div>
-        <h1>FarmHub</h1>
+        <h1>FarmHuub</h1>
       </header>
       <div className="sidebar-nav-links">
         {navButtons.map(tab => (
@@ -2910,7 +3242,7 @@ const App = () => {
   
   const initialPosts = [
     { id: 1, author: "FarmConnect SL", avatar: "FC", content: "Great harvest of peppers this season! Ready for the market. #agriculture #sierraleone", image: true },
-    { id: 2, author: "FarmHub Official", avatar: "FH", content: "Our latest workshop on sustainable farming techniques was a success! Thanks to all who participated.", image: false },
+    { id: 2, author: "FarmHuub Official", avatar: "FH", content: "Our latest workshop on sustainable farming techniques was a success! Thanks to all who participated.", image: false },
   ];
   const [communityPosts, setCommunityPosts] = useState(initialPosts);
 
@@ -2945,9 +3277,9 @@ const App = () => {
                 case 'blend': return <BlendPage />;
                 case 'land': return <LandPage />;
                 case 'climate': return <ClimatePage language={language} setLanguage={setLanguage} />;
-                case 'market': return <MarketPage />;
                 case 'community': return <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} />;
                 case 'ai': return <AIHubPage language={language} setLanguage={setLanguage} />;
+                case 'agent': return <CallAgentPage />;
                 case 'admin': return <FarmAdminPage addCommunityPost={addCommunityPost} logo={businessLogo} onLogoChange={handleLogoFileChange} />;
                 default: return <LandPage />;
             }
@@ -2958,12 +3290,12 @@ const App = () => {
 
   const navButtons = [
       { id: 'admin', icon: 'fa-solid fa-chart-pie', label: 'Admin' },
+      { id: 'agent', icon: 'fa-solid fa-headset', label: 'Agent' },
       { id: 'ai', icon: 'fa-solid fa-robot', label: 'AI Hub' },
       { id: 'blend', icon: 'fa-solid fa-mortar-pestle', label: 'Blend' },
       { id: 'climate', icon: 'fa-solid fa-cloud-sun-rain', label: 'Climate' },
       { id: 'community', icon: 'fa-solid fa-users', label: 'Community' },
       { id: 'land', icon: 'fa-solid fa-map-location-dot', label: 'Land' },
-      { id: 'market', icon: 'fa-solid fa-store', label: 'Market' },
       { id: 'scan', icon: 'fa-solid fa-camera', label: 'Scan' },
   ].sort((a,b) => a.label.localeCompare(b.label)); // Sort alphabetically for better UX
 
