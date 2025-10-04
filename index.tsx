@@ -1,5 +1,4 @@
 
-
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { GoogleGenAI, Chat, GenerateContentResponse, FunctionDeclaration, Type } from "@google/genai";
@@ -2535,7 +2534,7 @@ const FarmAdminPage = ({ addCommunityPost, logo, onLogoChange }: { addCommunityP
 };
 
 // --- NEW CLIMATE PAGE ---
-const ClimatePage = ({ language, setLanguage }: { language: string; setLanguage: (lang: string) => void; }) => {
+const ClimatePage = ({ userTier, language, setLanguage }: { userTier: 'free' | 'premium', language: string; setLanguage: (lang: string) => void; }) => {
   const [activeSubTab, setActiveSubTab] = useState('weather');
 
   const renderSubPage = () => {
@@ -2543,7 +2542,7 @@ const ClimatePage = ({ language, setLanguage }: { language: string; setLanguage:
       case 'weather': return <WeatherSubPage language={language} />;
       case 'wastelands': return <WastelandsSubPage language={language} />;
       case 'updates': return <UpdatesSubPage language={language} />;
-      case 'grants': return <GrantsSubPage language={language} />;
+      case 'grants': return <GrantsSubPage userTier={userTier} language={language} />;
       default: return <WeatherSubPage language={language} />;
     }
   };
@@ -2817,7 +2816,7 @@ Respond in ${langName}.
 
 type Grant = { name: string; funder: string; focus: string; description: string };
 
-const GrantsSubPage = ({ language }: { language: string }) => {
+const GrantsSubPage = ({ userTier, language }: { userTier: 'free' | 'premium', language: string }) => {
     const [vision, setVision] = useState('');
     const [loading, setLoading] = useState(false);
     const [grants, setGrants] = useState<Grant[]>([]);
@@ -2827,7 +2826,12 @@ const GrantsSubPage = ({ language }: { language: string }) => {
     const [draft, setDraft] = useState('');
     const [draftError, setDraftError] = useState('');
     const [selectedGrant, setSelectedGrant] = useState<Grant | null>(null);
-    const [submitted, setSubmitted] = useState(false);
+    
+    // New state for premium proposal builder
+    const [showProposalBuilder, setShowProposalBuilder] = useState(false);
+    const [budgetItems, setBudgetItems] = useState([{ description: '', amount: 0 }]);
+
+    const totalBudget = budgetItems.reduce((sum, item) => sum + item.amount, 0);
 
     const handleFindGrants = async () => {
         if (!vision) {
@@ -2838,10 +2842,9 @@ const GrantsSubPage = ({ language }: { language: string }) => {
         setError('');
         setGrants([]);
         setDraft('');
-        setSubmitted(false);
+        setShowProposalBuilder(false);
 
         try {
-            const langName = languages.find(l => l.code === language)?.name || 'English';
             const prompt = `You are a grant-finding assistant for agricultural businesses in Sierra Leone. Based on the user's farm profile below, invent a list of 2 plausible, fictional grants that are a good match.
 
 User's Farm Profile: "${vision}"
@@ -2852,7 +2855,6 @@ Example: [{"name": "...", "funder": "...", "focus": "...", "description": "..."}
 Do not include any text outside of the JSON array.
 `;
             const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-            // Clean the response to ensure it's valid JSON
             const jsonString = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
             const parsedGrants = JSON.parse(jsonString);
             setGrants(parsedGrants);
@@ -2864,31 +2866,58 @@ Do not include any text outside of the JSON array.
         }
     };
     
-    const handleDraftApplication = async (grant: Grant) => {
+    const handleSelectGrantForDrafting = (grant: Grant) => {
+        if (userTier === 'free') {
+            alert("This is a premium feature. Please upgrade to write detailed, professional grant proposals with budgets.");
+            return;
+        }
+        setSelectedGrant(grant);
+        setShowProposalBuilder(true);
+        setDraft('');
+        setBudgetItems([{ description: 'Project Management', amount: 0 }, { description: 'Materials & Supplies', amount: 0 }]);
+    };
+    
+    const handleGenerateDetailedProposal = async () => {
+        if (!selectedGrant) return;
         setDrafting(true);
         setDraft('');
         setDraftError('');
-        setSelectedGrant(grant);
-        setSubmitted(false);
 
         try {
             const langName = languages.find(l => l.code === language)?.name || 'English';
-            const prompt = `You are an expert grant writer. Draft a compelling grant application letter for the grant described below.
-The applicant's profile is also provided.
+            const prompt = `You are an expert grant writer with extensive experience in securing funding from major international organizations like USAID, the World Bank, and the Bill & Melinda Gates Foundation. Your specialty is agriculture in West Africa.
+
+Your task is to draft a comprehensive, professional, and persuasive grant proposal based on the applicant's profile and the grant's details. The proposal must be detailed, well-structured, and at least 800 words long.
 
 **Grant Details:**
-- Name: ${grant.name}
-- Funder: ${grant.funder}
-- Focus: ${grant.focus}
+- Grant Name: ${selectedGrant.name}
+- Funder: ${selectedGrant.funder}
+- Grant Focus: ${selectedGrant.focus}
 
-**Applicant's Profile:**
+**Applicant's Profile / Vision:**
 "${vision}"
 
-The letter should be formal, persuasive, and highlight how the applicant's vision perfectly aligns with the grant's focus. Structure it as a professional letter.
-Respond in ${langName}.
+**Proposed Budget:**
+${budgetItems.map(item => `- ${item.description}: ${formatCurrency(item.amount)}`).join('\n')}
+Total Budget: ${formatCurrency(totalBudget)}
+
+Please structure the proposal with the following sections, using clear headings (do not use Markdown formatting like asterisks or hashtags):
+
+1.  **COVER LETTER:** A brief, formal introductory letter addressed to the funding organization.
+2.  **EXECUTIVE SUMMARY:** A concise overview of the entire proposal, highlighting the problem, the proposed solution, key objectives, and the total funding requested.
+3.  **INTRODUCTION & PROBLEM STATEMENT:** A detailed description of the agricultural challenges the applicant is addressing. Use plausible statistics and context relevant to Sierra Leone. Explain why this project is necessary.
+4.  **PROJECT GOALS AND OBJECTIVES:** Clearly define the primary goal of the project. List several specific, measurable, achievable, relevant, and time-bound (SMART) objectives.
+5.  **METHODOLOGY & ACTIVITIES:** Describe the specific activities that will be undertaken to achieve the objectives. This should be a step-by-step plan of action.
+6.  **MONITORING AND EVALUATION (M&E) PLAN:** Explain how the project's success will be tracked and measured. What are the key performance indicators (KPIs)?
+7.  **DETAILED BUDGET NARRATIVE & TABLE:** First, provide a narrative explaining and justifying the costs. Then, present the budget in a clear, formatted table with columns for 'Item', 'Cost', and 'Justification'. Use the budget data provided above.
+8.  **ORGANIZATIONAL BACKGROUND:** Briefly describe the applicant's organization (based on their profile), highlighting their capacity to successfully implement the project.
+9.  **CONCLUSION:** A strong concluding paragraph that reiterates the project's importance and impact.
+
+Respond in ${langName}. The tone should be professional, confident, and compelling.
 `;
             const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
             setDraft(response.text);
+            setShowProposalBuilder(false);
         } catch(err) {
             console.error(err);
             setDraftError("Failed to draft the application. Please try again.");
@@ -2896,6 +2925,25 @@ Respond in ${langName}.
             setDrafting(false);
         }
     };
+    
+    // Budget helper functions
+    const handleBudgetChange = (index: number, field: 'description' | 'amount', value: string | number) => {
+        const newItems = [...budgetItems];
+        const aValue = typeof value === 'string' ? parseFloat(value) : value;
+        newItems[index] = { ...newItems[index], [field]: field === 'amount' ? aValue || 0 : value };
+        setBudgetItems(newItems);
+    };
+
+    const addBudgetItem = () => {
+        setBudgetItems([...budgetItems, { description: '', amount: 0 }]);
+    };
+
+    const removeBudgetItem = (index: number) => {
+        if (budgetItems.length > 1) {
+            setBudgetItems(budgetItems.filter((_, i) => i !== index));
+        }
+    };
+
 
     return (
         <>
@@ -2922,8 +2970,9 @@ Respond in ${langName}.
                                 <p><strong>Funder:</strong> {grant.funder}<br/>
                                 <strong>Focus:</strong> {grant.focus}<br/>
                                 {grant.description}</p>
-                                <button className="button" onClick={() => handleDraftApplication(grant)} disabled={drafting}>
-                                    {drafting && selectedGrant?.name === grant.name ? "Drafting..." : "Draft Application with AI"}
+                                <button className="button" onClick={() => handleSelectGrantForDrafting(grant)} disabled={drafting}>
+                                    Draft Application with AI
+                                    {userTier === 'free' && <i className="fa-solid fa-lock" style={{marginLeft: '8px'}}></i>}
                                 </button>
                             </div>
                         ))}
@@ -2931,26 +2980,66 @@ Respond in ${langName}.
                 </div>
             )}
             
-            {drafting && <Loader text={`Drafting application for ${selectedGrant?.name}...`} />}
+            {userTier === 'premium' && showProposalBuilder && selectedGrant && (
+                <div className="card proposal-builder-card">
+                    <h3>Detailed Proposal Builder for: {selectedGrant.name}</h3>
+                    <p className="card-subtitle">Create a budget for your proposal. The AI will use this to write a detailed narrative.</p>
+                    
+                    <div className="budget-form">
+                        <div className="budget-header">
+                            <span>Item Description</span>
+                            <span>Amount (SLL)</span>
+                        </div>
+                        {budgetItems.map((item, index) => (
+                            <div className="budget-item-row" key={index}>
+                                <input
+                                    type="text"
+                                    className="input"
+                                    placeholder="e.g., Purchase of certified seeds"
+                                    value={item.description}
+                                    onChange={(e) => handleBudgetChange(index, 'description', e.target.value)}
+                                />
+                                <input
+                                    type="number"
+                                    className="input"
+                                    placeholder="e.g., 5000000"
+                                    value={item.amount === 0 ? '' : item.amount}
+                                    onChange={(e) => handleBudgetChange(index, 'amount', e.target.value)}
+                                />
+                                <button className="remove-item-btn" onClick={() => removeBudgetItem(index)} disabled={budgetItems.length <= 1}>&times;</button>
+                            </div>
+                        ))}
+                         <button className="button-secondary" onClick={addBudgetItem} style={{width: 'auto', padding: '8px 15px'}}>
+                            <i className="fa-solid fa-plus"></i> Add Line Item
+                        </button>
+                    </div>
+
+                    <div className="budget-summary">
+                        <strong>Total Budget:</strong>
+                        <span>{formatCurrency(totalBudget)}</span>
+                    </div>
+
+                    <button className="button" onClick={handleGenerateDetailedProposal} disabled={drafting}>
+                        {drafting ? 'Generating Proposal...' : 'Generate Detailed Proposal'}
+                    </button>
+                </div>
+            )}
+            
+            {drafting && <Loader text={`Drafting professional proposal for ${selectedGrant?.name}...`} />}
             {draftError && <p className="error-text">{draftError}</p>}
 
             {draft && selectedGrant && (
                  <div className="card">
-                    <h3>Application Draft for: {selectedGrant.name}</h3>
+                    <h3>Generated Proposal for: {selectedGrant.name}</h3>
                     <div className="result-box">{draft}</div>
                      <div className="result-actions">
-                        <button className="button-secondary" onClick={() => downloadAsPdf(draft, `Grant_Application_${selectedGrant.name}.pdf`)}>
+                        <button className="button-secondary" onClick={() => downloadAsPdf(draft, `Grant_Proposal_${selectedGrant.name}.pdf`)}>
                             <i className="fa-solid fa-file-pdf"></i> PDF
                         </button>
-                        <button className="button-secondary" onClick={() => downloadAsWord(draft, `Grant_Application_${selectedGrant.name}.doc`)}>
+                        <button className="button" onClick={() => downloadAsWord(draft, `Grant_Proposal_${selectedGrant.name}.doc`)}>
                             <i className="fa-solid fa-file-word"></i> Word
                         </button>
                     </div>
-                    <button className="button" style={{marginTop: '15px'}} onClick={() => setSubmitted(true)} disabled={submitted}>
-                        {submitted ? "Submitted!" : "Submit Application"}
-                    </button>
-                     <p className="simulation-notice">This is a simulation. Clicking 'Submit' does not send any data.</p>
-                     {submitted && <p className="success-text">Application submitted successfully! (Simulation)</p>}
                 </div>
             )}
         </>
@@ -2992,23 +3081,6 @@ const LiveCallUI = ({ farmName, callData, onCallEnd }: { farmName: string, callD
         setTranscript(prev => [...prev, { speaker, text }]);
     };
 
-    const handleClientResponse = useCallback(async () => {
-        if (!chatRef.current || scriptIndex.current >= clientScript.current.length) {
-            endCall({ success: false, reason: "Client ended conversation." });
-            return;
-        }
-
-        const clientMessage = clientScript.current[scriptIndex.current];
-        scriptIndex.current++;
-        
-        // Add a small delay to simulate thinking time
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        addTranscript('client', clientMessage);
-        
-        // Send client's message to the AI and wait for the response
-        await processAIResponse(clientMessage);
-    }, []);
-
     const endCall = (result: any) => {
         setStatus('Call Ended');
         const finalLog = {
@@ -3024,6 +3096,22 @@ const LiveCallUI = ({ farmName, callData, onCallEnd }: { farmName: string, callD
     const processAIResponse = useCallback(async (message: string) => {
         if (!chatRef.current) return;
         
+        // This function needs to be defined here to be in scope for the callback
+        const handleClientResponse = async () => {
+            if (!chatRef.current || scriptIndex.current >= clientScript.current.length) {
+                endCall({ success: false, reason: "Client ended conversation." });
+                return;
+            }
+
+            const clientMessage = clientScript.current[scriptIndex.current];
+            scriptIndex.current++;
+            
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            addTranscript('client', clientMessage);
+            
+            await processAIResponse(clientMessage);
+        };
+
         let fullResponse = "";
         try {
             const stream = await chatRef.current.sendMessageStream({ message });
@@ -3062,7 +3150,7 @@ const LiveCallUI = ({ farmName, callData, onCallEnd }: { farmName: string, callD
             addTranscript('agent', "[Error communicating with AI]");
             endCall({ success: false, reason: "AI connection error." });
         }
-    }, [handleClientResponse]);
+    }, [endCall]); // We remove handleClientResponse from deps as it's defined inside
     
     // Initialize and start the call simulation
     useEffect(() => {
@@ -3086,7 +3174,7 @@ const LiveCallUI = ({ farmName, callData, onCallEnd }: { farmName: string, callD
 
         startConversation();
 
-    }, [farmName, callData.contact, callData.objective]);
+    }, [farmName, callData.contact, callData.objective, processAIResponse]);
 
     useEffect(() => {
         transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -3119,21 +3207,42 @@ const LiveCallUI = ({ farmName, callData, onCallEnd }: { farmName: string, callD
     );
 };
 
-const CallAgentPage = () => {
+const AutomatedCallsSubPage = () => {
     const [farmName] = useState(localStorage.getItem('farmHubFarmName') || 'Your Farm');
-    const [contact, setContact] = useState('Fatu Kamara');
+    const [contact, setContact] = useState('');
     const [objective, setObjective] = useState('Schedule a meeting to discuss cassava prices.');
     const [callLog, setCallLog] = useState<any[]>([]);
     const [isCalling, setIsCalling] = useState(false);
     const [activeCallData, setActiveCallData] = useState<any>(null);
     const [error, setError] = useState('');
 
-    const contacts = ["Fatu Kamara", "Musa Bangura", "Aminata Sesay", "John Koroma"];
+    const isContactsApiSupported = 'contacts' in navigator && 'ContactsManager' in window;
+
+    const handleSelectContact = async () => {
+        if (!isContactsApiSupported) return;
+        try {
+            const props = ['name', 'tel'];
+            const opts = { multiple: false };
+            
+            const selectedContacts = await (navigator as any).contacts.select(props, opts);
+            
+            if (selectedContacts.length > 0) {
+                const contactInfo = selectedContacts[0];
+                const contactName = contactInfo.name?.[0] || '';
+                const contactTel = contactInfo.tel?.[0] || '';
+                
+                setContact(contactName || contactTel || 'Unknown Contact');
+            }
+        } catch (ex) {
+            console.error("Error selecting contact:", ex);
+            setError("Could not access contacts. Please check permissions.");
+        }
+    };
 
     const handleStartCall = (e: React.FormEvent) => {
         e.preventDefault();
         if (!contact.trim() || !objective.trim()) {
-            setError('Please select a contact and define the call objective.');
+            setError('Please provide a contact name/number and define the call objective.');
             return;
         }
         setError('');
@@ -3163,15 +3272,26 @@ const CallAgentPage = () => {
                     onCallEnd={handleCallEnd} 
                 />
             )}
-            <h2>AI Call Agent</h2>
             <div className="card">
                 <h3>New Automated Call</h3>
                 <p className="card-subtitle">Have the AI agent call a client to schedule a meeting. This is a simulation.</p>
                 <form onSubmit={handleStartCall}>
-                    <label htmlFor="contact-select">Contact</label>
-                    <select id="contact-select" className="input" value={contact} onChange={e => setContact(e.target.value)}>
-                        {contacts.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    <label htmlFor="contact-input">Contact Name or Number</label>
+                    <div className="contact-input-wrapper">
+                        <input
+                            id="contact-input"
+                            type="text"
+                            className="input"
+                            placeholder="e.g., Fatu Kamara or 088..."
+                            value={contact}
+                            onChange={e => setContact(e.target.value)}
+                        />
+                        {isContactsApiSupported && (
+                            <button type="button" className="button icon-button" onClick={handleSelectContact} aria-label="Select from contacts">
+                                <i className="fa-solid fa-address-book"></i>
+                            </button>
+                        )}
+                    </div>
 
                     <label htmlFor="call-objective">Call Objective</label>
                     <textarea id="call-objective" className="textarea" value={objective} onChange={e => setObjective(e.target.value)}></textarea>
@@ -3208,34 +3328,341 @@ const CallAgentPage = () => {
     );
 };
 
+const ChatbotSubPage = () => {
+    const [chat, setChat] = useState<Chat | null>(null);
+    const [messages, setMessages] = useState<{role: string; text: string}[]>([]);
+    const [input, setInput] = useState('');
+    const [loading, setLoading] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
 
-// --- MAIN APP ---
-const SidebarNav = ({ activeTab, setActiveTab, navButtons, logo, onLogoClick }) => (
-    <nav className="sidebar-nav" aria-label="Main Navigation">
-      <header className="sidebar-header">
-        <div className="logo" onClick={onLogoClick} style={{ cursor: 'pointer' }} title="Change logo" role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onLogoClick()}>
-          {logo ? <img src={logo} alt="Farm Logo" className="header-logo-img" /> : 'FH'}
+    useEffect(() => {
+        const systemInstruction = `You are 'FarmHuub Helper', a friendly and professional AI chatbot. Your purpose is to assist users by answering their questions about the FarmHuub application's features. Provide clear, accurate, and concise information.
+
+Here is a summary of the app's features:
+
+*   **Scan Page:** Users can upload a photo of a plant or soil. The AI analyzes the image to diagnose crop diseases, identify healthy plants, or assess soil quality, providing detailed reports and recommendations.
+*   **Blend Page:** Users can select multiple plants or crops. The AI generates a detailed analysis of the blend, including potential uses for food, medicine, livestock feed, and natural pesticides.
+*   **Land Page:** This feature includes an interactive map where users can draw a plot of land to measure its area. They can then generate a formal-looking land survey document with coordinates, crop suggestions, and a map image.
+*   **Climate Hub:** This section provides AI-powered weather forecasts and farming advice, plans for reclaiming barren land (wastelands), daily news updates on agriculture and climate, and a tool to find and apply for agricultural grants.
+*   **Community Hub:** A social section where users can interact. It includes a 'Feed' for posts, a 'Market' to buy/sell produce, private 'Chats', 'Calls', 'Meetings', and a 'Video' producer to create marketing videos.
+*   **Farm Admin Hub:** A comprehensive business management tool. It includes 'Finance' for tracking income/expenses and generating financial reports, 'Docs' for creating business plans and proposals, 'HR' for generating job descriptions and offer letters, and 'Legal' for drafting agreements.
+*   **Agent Hub:** This is where you are! It features an 'AI Call Agent' that can simulate making phone calls to schedule meetings, and you, the 'AI Chatbot', to answer questions about the app.
+
+When a user asks a question, identify which feature they are asking about and explain its functionality clearly. Be polite and always offer further assistance. Start your very first message by introducing yourself and asking how you can help.`;
+        
+        const newChat = ai.chats.create({
+            model: 'gemini-2.5-flash',
+            config: { systemInstruction },
+        });
+        setChat(newChat);
+
+        setLoading(true);
+        newChat.sendMessage({message: "Hello!"}).then(response => {
+            setMessages([{ role: 'ai', text: response.text }]);
+            setLoading(false);
+        }).catch(err => {
+            console.error("Initial AI message failed", err);
+            setMessages([{ role: 'ai', text: "Hello! I'm FarmHuub Helper. How can I assist you with the app's features today?" }]);
+            setLoading(false);
+        });
+
+    }, []);
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages]);
+
+    const sendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!input.trim() || !chat || loading) return;
+
+        const userMessage = { role: 'user', text: input };
+        setMessages(prev => [...prev, userMessage]);
+        setInput('');
+        setLoading(true);
+
+        try {
+            const response = await chat.sendMessage({ message: input });
+            setMessages(prev => [...prev, { role: 'ai', text: response.text }]);
+        } catch (err) {
+            console.error(err);
+            setMessages(prev => [...prev, { role: 'ai', text: "Sorry, I encountered an error. Please try again." }]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="card" style={{padding: 0, height: '65vh', minHeight: '500px', display: 'flex', flexDirection: 'column'}}>
+            <div className="chat-window" style={{border: 'none', borderRadius: 'var(--border-radius)'}}>
+                <div className="chat-messages">
+                    {messages.map((msg, index) => (
+                        <div key={index} className={`chat-message ${msg.role === 'user' ? 'user-message' : 'ai-message'}`}>
+                            {msg.text}
+                        </div>
+                    ))}
+                    {loading && messages.length > 0 && (
+                        <div className="chat-message ai-message">
+                            <div className="spinner" style={{width: '20px', height: '20px'}}></div>
+                        </div>
+                    )}
+                    <div ref={messagesEndRef} />
+                </div>
+                <form id="chatbot-form" className="chat-input-form" onSubmit={sendMessage}>
+                    <input 
+                        type="text" 
+                        placeholder="Ask about app features..." 
+                        value={input} 
+                        onChange={e => setInput(e.target.value)} 
+                        disabled={loading} 
+                    />
+                    <button type="submit" className="send-button" disabled={loading || !input.trim()} aria-label="Send message">
+                        <i className="fa-solid fa-paper-plane"></i>
+                    </button>
+                </form>
+            </div>
         </div>
-        <h1>FarmHuub</h1>
-      </header>
-      <div className="sidebar-nav-links">
-        {navButtons.map(tab => (
-          <button
+    );
+};
+
+const CallAgentPage = ({ userTier, setActiveTab }: { userTier: 'free' | 'premium', setActiveTab: (tab: string) => void}) => {
+  const [activeSubTab, setActiveSubTab] = useState('chatbot');
+
+  const renderSubPage = () => {
+    if (activeSubTab === 'calls' && userTier === 'free') {
+      return <PremiumLockPage setActiveTab={setActiveTab} />;
+    }
+    switch (activeSubTab) {
+      case 'calls': return <AutomatedCallsSubPage />;
+      case 'chatbot': return <ChatbotSubPage />;
+      default: return <ChatbotSubPage />;
+    }
+  };
+
+  const tabs = [
+    { id: 'chatbot', label: 'Chatbot', icon: 'fa-solid fa-comment-dots' },
+    { id: 'calls', label: 'Call Agent', icon: 'fa-solid fa-phone-volume' },
+  ];
+
+  return (
+    <div>
+      <h2>AI Agent Hub</h2>
+      <div className="sub-nav">
+        {tabs.map(tab => (
+          <button 
             key={tab.id}
-            className={`sidebar-button ${activeTab === tab.id ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
-            aria-current={activeTab === tab.id ? 'page' : undefined}
+            className={`sub-nav-button ${activeSubTab === tab.id ? 'active' : ''}`}
+            onClick={() => {
+                if (tab.id === 'calls' && userTier === 'free') {
+                    setActiveTab('upgrade');
+                } else {
+                    setActiveSubTab(tab.id);
+                }
+            }}
           >
-            <i className={tab.icon} aria-hidden="true"></i>
+            <i className={tab.icon}></i>
             <span>{tab.label}</span>
+            {tab.id === 'calls' && userTier === 'free' && <i className="fa-solid fa-lock lock-icon-inline"></i>}
           </button>
         ))}
       </div>
-    </nav>
+      <div className="sub-page-content">
+        {renderSubPage()}
+      </div>
+    </div>
   );
+};
+
+// --- SUBSCRIPTION & GATING COMPONENTS ---
+const PremiumLockPage = ({ setActiveTab }: { setActiveTab: (tab: string) => void }) => (
+  <div className="premium-lock-container">
+    <div className="card premium-lock-card">
+      <i className="fa-solid fa-gem premium-icon"></i>
+      <h3>Unlock Premium Features</h3>
+      <p>Upgrade your account to access this feature and many more powerful tools to boost your agribusiness.</p>
+      <ul className="feature-list-lock">
+          <li><i className="fa-solid fa-check"></i> All Admin Hub tools</li>
+          <li><i className="fa-solid fa-check"></i> Advanced AI Agri-Bot</li>
+          <li><i className="fa-solid fa-check"></i> Automated AI Call Agent</li>
+          <li><i className="fa-solid fa-check"></i> Unlimited Land Surveys</li>
+          <li><i className="fa-solid fa-check"></i> And much more!</li>
+      </ul>
+      <button className="button" onClick={() => setActiveTab('upgrade')}>
+        <i className="fa-solid fa-rocket"></i> Upgrade to Premium
+      </button>
+    </div>
+  </div>
+);
+
+const UpgradePage = ({ onUpgrade }: { onUpgrade: () => void }) => {
+    const [plan, setPlan] = useState('yearly');
+    const [paymentMethod, setPaymentMethod] = useState('card');
+    const [paymentProof, setPaymentProof] = useState<File | null>(null);
+    const [proofPreview, setProofPreview] = useState<string | null>(null);
+
+    const handleProofChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setPaymentProof(file);
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    setProofPreview(reader.result as string);
+                };
+                reader.readAsDataURL(file);
+            } else {
+                setProofPreview(file.name);
+            }
+        }
+    };
+
+    const handleConfirmUpgrade = () => {
+        if (paymentMethod !== 'card') {
+            if (!paymentProof) {
+                alert("Please upload proof of payment to proceed.");
+                return;
+            }
+            alert("Thank you! Your payment is being verified. Your account will be upgraded to Premium within 24 hours.");
+        }
+        onUpgrade();
+    };
+    
+    return (
+        <div>
+            <h2>Upgrade to FarmHuub Premium</h2>
+            <div className="card">
+                <h3>Choose Your Plan</h3>
+                <div className="plan-selector">
+                    <div className={`plan-card ${plan === 'monthly' ? 'selected' : ''}`} onClick={() => setPlan('monthly')}>
+                        <h4>Monthly</h4>
+                        <p className="price">$10<span>/month</span></p>
+                        <p className="billing-info">Billed every month</p>
+                    </div>
+                    <div className={`plan-card ${plan === 'yearly' ? 'selected' : ''}`} onClick={() => setPlan('yearly')}>
+                         <div className="best-value-badge">Best Value</div>
+                        <h4>Yearly</h4>
+                        <p className="price">$100<span>/year</span></p>
+                        <p className="billing-info">Save $20 annually</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div className="card">
+                <h3>Payment Details</h3>
+                <div className="sub-nav payment-tabs">
+                    <button className={`sub-nav-button ${paymentMethod === 'card' ? 'active' : ''}`} onClick={() => setPaymentMethod('card')}><i className="fa-solid fa-credit-card"></i> Card</button>
+                    <button className={`sub-nav-button ${paymentMethod === 'bank' ? 'active' : ''}`} onClick={() => setPaymentMethod('bank')}><i className="fa-solid fa-building-columns"></i> Bank</button>
+                    <button className={`sub-nav-button ${paymentMethod === 'paypal' ? 'active' : ''}`} onClick={() => setPaymentMethod('paypal')}><i className="fa-brands fa-paypal"></i> PayPal</button>
+                    <button className={`sub-nav-button ${paymentMethod === 'mobile' ? 'active' : ''}`} onClick={() => setPaymentMethod('mobile')}><i className="fa-solid fa-mobile-screen-button"></i> Mobile</button>
+                </div>
+                
+                <div className="payment-details-content">
+                    {paymentMethod === 'card' && (
+                        <form className="payment-form">
+                            <label>Card Number</label><input type="text" className="input" placeholder="0000 0000 0000 0000" />
+                            <div style={{display: 'flex', gap: '15px'}}>
+                                <div style={{flex: 1}}><label>Expiry Date</label><input type="text" className="input" placeholder="MM / YY" /></div>
+                                <div style={{flex: 1}}><label>CVC</label><input type="text" className="input" placeholder="123" /></div>
+                            </div>
+                        </form>
+                    )}
+                    {paymentMethod === 'bank' && (
+                        <div className="bank-details">
+                            <p>Please make a direct bank transfer to the following account:</p>
+                            <ul>
+                                <li><strong>Bank Name:</strong> Guaranty Trust Bank</li>
+                                <li><strong>Account Number:</strong> 2053510116110</li>
+                                <li><strong>BBAN:</strong> 005205000050924031</li>
+                                <li><strong>SWIFT Code:</strong> GTB-SL-FR</li>
+                            </ul>
+                            <p>Use your email address as the payment reference.</p>
+                        </div>
+                    )}
+                    {paymentMethod === 'paypal' && (
+                         <div className="bank-details">
+                            <p>Send your payment via PayPal to the following email address:</p>
+                             <p className="payment-highlight">lavalieemmauel@gmail.com</p>
+                        </div>
+                    )}
+                    {paymentMethod === 'mobile' && (
+                        <div className="bank-details">
+                            <p>Pay using Africell's Afrimoney mobile money service to:</p>
+                            <p className="payment-highlight">+232 88 635 309</p>
+                        </div>
+                    )}
+
+                    {paymentMethod !== 'card' && (
+                        <div className="payment-proof-uploader">
+                            <h4>Upload Payment Confirmation</h4>
+                            <p>Please upload a screenshot or document (PDF, JPG, PNG) of your transaction receipt.</p>
+                            <input type="file" id="payment-proof-upload" accept=".pdf,.jpg,.jpeg,.png" onChange={handleProofChange} style={{display: 'none'}} />
+                            <label htmlFor="payment-proof-upload" className="file-input-label">
+                                {paymentProof ? (
+                                    <span><i className="fa-solid fa-check-circle"></i> {paymentProof.name}</span>
+                                ) : (
+                                    <span><i className="fa-solid fa-upload"></i> Choose a file...</span>
+                                )}
+                            </label>
+                            {proofPreview && (
+                                <div className="proof-preview">
+                                    {paymentProof && paymentProof.type.startsWith('image/') ? (
+                                        <img src={proofPreview} alt="Payment proof preview" />
+                                    ) : (
+                                        <div className="file-icon-preview">
+                                            <i className="fa-solid fa-file-pdf"></i>
+                                            <span>{proofPreview}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+            
+            <button className="button" onClick={handleConfirmUpgrade} style={{fontSize: '18px', padding: '15px'}}>
+               <i className="fa-solid fa-lock-open"></i> Confirm & Upgrade Now
+            </button>
+        </div>
+    );
+};
+
+
+// --- MAIN APP ---
+const SidebarNav = ({ activeTab, setActiveTab, navButtons, logo, onLogoClick, userTier }) => {
+    const premiumTabs = ['scan', 'blend', 'land', 'climate', 'admin', 'ai'];
+    
+    return (
+        <nav className="sidebar-nav" aria-label="Main Navigation">
+          <header className="sidebar-header">
+            <div className="logo" onClick={onLogoClick} style={{ cursor: 'pointer' }} title="Change logo" role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onLogoClick()}>
+              {logo ? <img src={logo} alt="Farm Logo" className="header-logo-img" /> : 'FH'}
+            </div>
+            <h1>FarmHuub</h1>
+          </header>
+          <div className="sidebar-nav-links">
+            {navButtons.map(tab => (
+              <button
+                key={tab.id}
+                className={`sidebar-button ${activeTab === tab.id ? 'active' : ''} ${tab.isUpgrade ? 'upgrade-button' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
+                disabled={tab.id === 'upgrade' && userTier === 'premium'}
+              >
+                <i className={tab.icon} aria-hidden="true"></i>
+                <span>{tab.label}</span>
+                {premiumTabs.includes(tab.id) && userTier === 'free' && <i className="fa-solid fa-lock lock-icon"></i>}
+                 {tab.id === 'upgrade' && userTier === 'premium' && <span className="premium-badge">Premium</span>}
+              </button>
+            ))}
+          </div>
+        </nav>
+    );
+};
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState('land');
+  const [activeTab, setActiveTab] = useState('community');
+  const [userTier, setUserTier] = useState<'free' | 'premium'>('free');
   const [businessLogo, setBusinessLogo] = useState<string | null>(localStorage.getItem('farmHubLogo'));
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [language, setLanguage] = useState('en-US');
@@ -3268,24 +3695,31 @@ const App = () => {
     }
   };
 
+  const handleUpgrade = () => {
+      setUserTier('premium');
+      setActiveTab('admin'); // Redirect to a premium page after successful upgrade
+      alert("Upgrade successful! Welcome to FarmHuub Premium. All features are now unlocked.");
+  };
+
+  const premiumTabs = ['scan', 'blend', 'land', 'climate', 'admin', 'ai'];
+
   const renderPage = () => {
-    return (
-        <div>
-        {(() => {
-            switch (activeTab) {
-                case 'scan': return <ScanPage />;
-                case 'blend': return <BlendPage />;
-                case 'land': return <LandPage />;
-                case 'climate': return <ClimatePage language={language} setLanguage={setLanguage} />;
-                case 'community': return <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} />;
-                case 'ai': return <AIHubPage language={language} setLanguage={setLanguage} />;
-                case 'agent': return <CallAgentPage />;
-                case 'admin': return <FarmAdminPage addCommunityPost={addCommunityPost} logo={businessLogo} onLogoChange={handleLogoFileChange} />;
-                default: return <LandPage />;
-            }
-        })()}
-        </div>
-    );
+    if (userTier === 'free' && premiumTabs.includes(activeTab)) {
+        return <PremiumLockPage setActiveTab={setActiveTab} />;
+    }
+    
+    switch (activeTab) {
+        case 'scan': return <ScanPage />;
+        case 'blend': return <BlendPage />;
+        case 'land': return <LandPage />;
+        case 'climate': return <ClimatePage userTier={userTier} language={language} setLanguage={setLanguage} />;
+        case 'community': return <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} />;
+        case 'ai': return <AIHubPage language={language} setLanguage={setLanguage} />;
+        case 'agent': return <CallAgentPage userTier={userTier} setActiveTab={setActiveTab} />;
+        case 'admin': return <FarmAdminPage addCommunityPost={addCommunityPost} logo={businessLogo} onLogoChange={handleLogoFileChange} />;
+        case 'upgrade': return userTier === 'free' ? <UpgradePage onUpgrade={handleUpgrade} /> : <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} />;
+        default: return <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} />;
+    }
   };
 
   const navButtons = [
@@ -3297,7 +3731,14 @@ const App = () => {
       { id: 'community', icon: 'fa-solid fa-users', label: 'Community' },
       { id: 'land', icon: 'fa-solid fa-map-location-dot', label: 'Land' },
       { id: 'scan', icon: 'fa-solid fa-camera', label: 'Scan' },
-  ].sort((a,b) => a.label.localeCompare(b.label)); // Sort alphabetically for better UX
+      { id: 'upgrade', icon: 'fa-solid fa-gem', label: 'Upgrade', isUpgrade: true },
+  ].sort((a,b) => {
+      if (a.isUpgrade) return -1; // always put upgrade first
+      if (b.isUpgrade) return 1;
+      return a.label.localeCompare(b.label);
+  });
+  
+  const filteredNavButtons = userTier === 'premium' ? navButtons.filter(b => b.id !== 'upgrade') : navButtons;
 
   return (
     <div className="app-container">
@@ -3310,35 +3751,33 @@ const App = () => {
         aria-hidden="true"
       />
       
-      {/* Sidebar for Desktop View - controlled by CSS */}
       <SidebarNav 
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
         navButtons={navButtons} 
         logo={businessLogo}
         onLogoClick={handleLogoClick}
+        userTier={userTier}
       />
       
-      {/* This wrapper contains the content for both mobile and desktop views */}
       <div className="main-content-wrapper">
-          {/* Header for Mobile View - controlled by CSS */}
           <Header logo={businessLogo} onLogoClick={handleLogoClick} />
           <main className="page-content">{renderPage()}</main>
           <Footer />
       </div>
 
-      {/* Bottom Nav for Mobile View - controlled by CSS */}
       <nav className="bottom-nav">
-        {navButtons.map(tab => (
+        {filteredNavButtons.map(tab => (
           <button
             key={tab.id}
-            className={`nav-button ${activeTab === tab.id ? 'active' : ''}`}
+            className={`nav-button ${activeTab === tab.id ? 'active' : ''} ${tab.isUpgrade ? 'upgrade-button' : ''}`}
             onClick={() => setActiveTab(tab.id)}
             aria-label={tab.label}
             aria-current={activeTab === tab.id ? 'page' : undefined}
           >
             <i className={tab.icon} aria-hidden="true"></i>
             <span>{tab.label}</span>
+            {userTier === 'free' && premiumTabs.includes(tab.id) && <i className="fa-solid fa-lock lock-icon-mobile"></i>}
           </button>
         ))}
       </nav>
