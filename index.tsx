@@ -3,7 +3,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { GoogleGenAI, Chat, GenerateContentResponse, FunctionDeclaration, Type } from "@google/genai";
 
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 declare const L: any; // Declare Leaflet and Geoman global
 declare const jspdf: any; // Declare jsPDF and autoTable global
@@ -19,6 +19,87 @@ declare const window: IWindow;
 
 const API_KEY = process.env.API_KEY;
 const ai = new GoogleGenAI({ apiKey: API_KEY });
+
+// --- GLOBALIZATION DATA ---
+const countries = [
+  {
+    name: 'Sierra Leone',
+    code: 'SL',
+    currency: { code: 'SLL', symbol: 'SLL' },
+    exchangeRateToUSD: 25000,
+    languages: [
+      { code: 'en-US', name: 'English' },
+      { code: 'kri-SL', name: 'Krio' },
+      { code: 'men-SL', name: 'Mende' },
+      { code: 'tem-SL', name: 'Temne' },
+    ],
+  },
+  {
+    name: 'Nigeria',
+    code: 'NG',
+    currency: { code: 'NGN', symbol: '₦' },
+    exchangeRateToUSD: 1500,
+    languages: [
+      { code: 'en-NG', name: 'English' },
+      { code: 'ha-NG', name: 'Hausa' },
+      { code: 'ig-NG', name: 'Igbo' },
+      { code: 'yo-NG', name: 'Yoruba' },
+    ],
+  },
+  {
+    name: 'Ghana',
+    code: 'GH',
+    currency: { code: 'GHS', symbol: 'GH₵' },
+    exchangeRateToUSD: 15,
+    languages: [
+      { code: 'en-GH', name: 'English' },
+      { code: 'ak-GH', name: 'Akan' },
+      { code: 'ee-GH', name: 'Ewe' },
+    ],
+  },
+  {
+    name: 'Kenya',
+    code: 'KE',
+    currency: { code: 'KES', symbol: 'KSh' },
+    exchangeRateToUSD: 130,
+    languages: [
+      { code: 'en-KE', name: 'English' },
+      { code: 'sw-KE', name: 'Swahili' },
+    ],
+  },
+  {
+    name: 'India',
+    code: 'IN',
+    currency: { code: 'INR', symbol: '₹' },
+    exchangeRateToUSD: 83,
+    languages: [
+      { code: 'en-IN', name: 'English' },
+      { code: 'hi-IN', name: 'Hindi' },
+      { code: 'bn-IN', name: 'Bengali' },
+      { code: 'te-IN', name: 'Telugu' },
+    ],
+  },
+  {
+    name: 'Brazil',
+    code: 'BR',
+    currency: { code: 'BRL', symbol: 'R$' },
+    exchangeRateToUSD: 5.4,
+    languages: [
+      { code: 'pt-BR', name: 'Portuguese' },
+    ],
+  },
+   {
+    name: 'United States',
+    code: 'US',
+    currency: { code: 'USD', symbol: '$' },
+    exchangeRateToUSD: 1,
+    languages: [
+      { code: 'en-US', name: 'English' },
+      { code: 'es-US', name: 'Spanish' },
+    ],
+  },
+];
+
 
 // --- HELPER FUNCTIONS ---
 const imageToGenerativePart = async (file: File) => {
@@ -102,26 +183,47 @@ const Loader = ({ text }: { text?: string }) => (
   </div>
 );
 
-const languages = [
-    { code: 'en-US', name: 'English' },
-    { code: 'kri-SL', name: 'Krio' },
-    { code: 'men-SL', name: 'Mende' },
-    { code: 'tem-SL', name: 'Temne' },
-];
+const CountrySelector = ({ selectedCountry, setCountry, countriesList }: { selectedCountry: string; setCountry: (code: string) => void; countriesList: any[] }) => (
+    <div className="country-selector-container">
+        <label htmlFor="country-select"><i className="fa-solid fa-globe"></i></label>
+        <select id="country-select" className="input" value={selectedCountry} onChange={e => setCountry(e.target.value)}>
+            {countriesList.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+        </select>
+    </div>
+);
 
-const LanguageSelector = ({ language, setLanguage }: { language: string; setLanguage: (lang: string) => void; }) => (
+const LanguageSelector = ({ language, setLanguage, availableLanguages }: { language: string; setLanguage: (lang: string) => void; availableLanguages: {code: string, name: string}[] }) => (
     <div className="language-selector-container">
         <label htmlFor="language-select"><i className="fa-solid fa-language"></i></label>
         <select id="language-select" className="input" value={language} onChange={e => setLanguage(e.target.value)}>
-            {languages.map(lang => <option key={lang.code} value={lang.code}>{lang.name}</option>)}
+            {availableLanguages.map(lang => <option key={lang.code} value={lang.code}>{lang.name}</option>)}
         </select>
+    </div>
+);
+
+const SettingsBar = ({
+    selectedCountry,
+    setSelectedCountry,
+    availableLanguages,
+    language,
+    setLanguage
+} : {
+    selectedCountry: string;
+    setSelectedCountry: (code: string) => void;
+    availableLanguages: {code: string, name: string}[];
+    language: string;
+    setLanguage: (code: string) => void;
+}) => (
+    <div className="settings-bar">
+        <CountrySelector countriesList={countries} selectedCountry={selectedCountry} setCountry={setSelectedCountry} />
+        <LanguageSelector availableLanguages={availableLanguages} language={language} setLanguage={setLanguage} />
     </div>
 );
 
 
 // --- PAGE COMPONENTS ---
 
-const ScanPage = () => {
+const ScanPage = ({ countryName }: { countryName: string }) => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState("");
@@ -148,7 +250,7 @@ const ScanPage = () => {
 
     try {
       const imagePart = await imageToGenerativePart(file);
-      const prompt = `You are an expert botanist, plant pathologist, and soil scientist for West African agriculture. Analyze this image. 
+      const prompt = `You are an expert botanist, plant pathologist, and soil scientist for agriculture in ${countryName}. Analyze this image. 
 
 If it's a healthy plant, identify it and provide:
 1.  **Plant Name:** (Common and Scientific)
@@ -159,7 +261,7 @@ If it's a healthy plant, identify it and provide:
 
 If it's a diseased plant, provide a diagnosis:
 1.  **Plant Identification:** The name of the plant.
-2.  **Disease Diagnosis:** The name of the suspected disease (e.g., Cassava Mosaic Disease, Black Sigatoka). Be specific.
+2.  **Disease Diagnosis:** The name of the suspected disease. Be specific.
 3.  **Causes & Symptoms:** Describe the visual symptoms and explain the common causes (fungal, bacterial, viral, nutrient deficiency).
 4.  **Treatment - Organic/Cultural Methods:** Provide actionable, low-cost recommendations suitable for small-scale farmers (e.g., removing infected leaves, crop rotation, natural sprays).
 5.  **Treatment - Chemical Methods:** Suggest appropriate chemical treatments (fungicides, pesticides) if applicable, including a disclaimer to use them safely and according to instructions.
@@ -171,7 +273,7 @@ If it's a soil, analyze it and provide:
 3.  **Potential Nutrient Status:** (What the visuals might imply)
 4.  **Natural Improvement Recommendations:** (e.g., composting, cover crops, local organic matter)
 
-Base your analysis on common crops, diseases, and conditions found in Sierra Leone. Present the information clearly with bold headings.`;
+Base your analysis on common crops, diseases, and conditions found in ${countryName}. Present the information clearly with bold headings.`;
       
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -214,7 +316,7 @@ Base your analysis on common crops, diseases, and conditions found in Sierra Leo
   );
 };
 
-const BlendPage = () => {
+const BlendPage = ({ countryName }: { countryName: string }) => {
   const commonPlants = ["Cassava Leaves", "Moringa", "Ginger", "Garlic", "Turmeric", "Neem Leaves", "Sweet Potato Leaves", "Hibiscus (Sorrel)"];
   const [selectedPlants, setSelectedPlants] = useState<string[]>([]);
   const [customPlant, setCustomPlant] = useState('');
@@ -248,14 +350,14 @@ const BlendPage = () => {
     setResult('');
 
     try {
-      const prompt = `You are an expert ethnobotanist and nutritionist specializing in West African flora. Analyze the following blend of plants: ${selectedPlants.join(', ')}.
+      const prompt = `You are an expert ethnobotanist and nutritionist specializing in the flora of ${countryName}. Analyze the following blend of plants: ${selectedPlants.join(', ')}.
 
 Provide a detailed analysis of their combined properties. The output should be well-structured with clear Markdown headings.
 
 1.  **Blend Name:** A creative, descriptive name for this mixture.
-2.  **Human Uses (Food):** Describe how this blend can be used in cooking. Suggest a simple recipe or preparation method.
+2.  **Human Uses (Food):** Describe how this blend can be used in cooking. Suggest a simple recipe or preparation method relevant to the local cuisine.
 3.  **Human Uses (Medicinal):** Detail the traditional medicinal applications. What health benefits might this combination offer? What ailments could it potentially alleviate? **Always include a strong disclaimer to consult a healthcare professional before use.**
-4.  **Animal Uses (Livestock):** Can this blend be used as a food supplement or natural remedy for common livestock (like chickens, goats)? If so, how?
+4.  **Animal Uses (Livestock):** Can this blend be used as a food supplement or natural remedy for common livestock? If so, how?
 5.  **Agricultural Uses:** Explain if this mixture can be used as a natural pesticide, fungicide, or soil amendment/fertilizer. Provide simple instructions for preparation.
 6.  **Important Precautions:** List any potential side effects, contraindications, or warnings associated with this blend for humans or animals.`;
 
@@ -685,11 +787,11 @@ const MeetingsSubPage = () => {
     );
 };
 
-const VideoSubPage = () => {
+const VideoSubPage = ({ countryName }: { countryName: string }) => {
     // Script generation state
     const [projectName, setProjectName] = useState('FarmHuub Launch Video');
-    const [targetAudience, setTargetAudience] = useState('Small-to-medium scale farmers, agricultural entrepreneurs, and farming cooperatives in Sierra Leone.');
-    const [keyMessage, setKeyMessage] = useState('FarmHuub is an essential, modern tool for farmers in Sierra Leone, highlighting its key benefits: ease of use, empowerment through knowledge, and business growth.');
+    const [targetAudience, setTargetAudience] = useState(`Small-to-medium scale farmers, agricultural entrepreneurs, and farming cooperatives in ${countryName}.`);
+    const [keyMessage, setKeyMessage] = useState('FarmHuub is an essential, modern tool for farmers, highlighting its key benefits: ease of use, empowerment through knowledge, and business growth.');
     const [videoLength, setVideoLength] = useState('30 seconds');
     const [videoStyle, setVideoStyle] = useState('Inspirational');
     const [loading, setLoading] = useState(false);
@@ -701,6 +803,10 @@ const VideoSubPage = () => {
     const [videoGenerationMessage, setVideoGenerationMessage] = useState('');
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
     const [videoError, setVideoError] = useState('');
+
+    useEffect(() => {
+        setTargetAudience(`Small-to-medium scale farmers, agricultural entrepreneurs, and farming cooperatives in ${countryName}.`);
+    }, [countryName]);
 
     const isFormValid = () => {
         return projectName.trim() && targetAudience.trim() && keyMessage.trim();
@@ -720,7 +826,7 @@ const VideoSubPage = () => {
 
         try {
             const prompt = `
-You are a professional marketing video producer specializing in short-form social media content for an agricultural audience in West Africa, specifically Sierra Leone.
+You are a professional marketing video producer specializing in short-form social media content for an agricultural audience in ${countryName}.
 
 Your task is to create a complete script and storyboard for a marketing video based on the following project details:
 
@@ -742,7 +848,7 @@ Please structure your output with the following format, using Markdown for clear
 
 ---
 
-Ensure the script is engaging, culturally relevant to Sierra Leone, and effectively communicates the key message within the specified time limit. The storyboard (visual descriptions) should be vivid and achievable with a modest budget.
+Ensure the script is engaging, culturally relevant to ${countryName}, and effectively communicates the key message within the specified time limit. The storyboard (visual descriptions) should be vivid and achievable with a modest budget.
 `;
             const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
             setResult(response.text);
@@ -900,7 +1006,7 @@ ${result}
     );
 };
 
-const CommunityPage = ({ communityPosts, addCommunityPost }: { communityPosts: any[], addCommunityPost: (post: any) => void }) => {
+const CommunityPage = ({ communityPosts, addCommunityPost, countryName }: { communityPosts: any[], addCommunityPost: (post: any) => void, countryName: string }) => {
   const [activeSubTab, setActiveSubTab] = useState('feed');
 
   const renderSubPage = () => {
@@ -910,7 +1016,7 @@ const CommunityPage = ({ communityPosts, addCommunityPost }: { communityPosts: a
       case 'market': return <MarketSubPage />;
       case 'calls': return <CallsSubPage />;
       case 'meetings': return <MeetingsSubPage />;
-      case 'video': return <VideoSubPage />;
+      case 'video': return <VideoSubPage countryName={countryName} />;
       default: return <FeedSubPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} />;
     }
   };
@@ -957,7 +1063,7 @@ type Survey = {
   geojson: any; // GeoJSON object
 };
 
-const LandPage = () => {
+const LandPage = ({ countryName }: { countryName: string }) => {
   const [userName, setUserName] = useState('');
   const [landSize, setLandSize] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1081,7 +1187,7 @@ const LandPage = () => {
     setIsSearchingLocation(true);
     setLocationSearchError('');
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationQuery)}&format=json&limit=1&countrycodes=sl`);
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationQuery)}&format=json&limit=1`);
       if (!response.ok) throw new Error('Network response was not ok');
       const data = await response.json();
 
@@ -1122,16 +1228,16 @@ const LandPage = () => {
             coordinatesText = surveyCoordinates.map(p => `  - Latitude: ${p.lat.toFixed(6)}, Longitude: ${p.lng.toFixed(6)}`).join('\n');
         }
 
-        const prompt = `You are a professional land surveyor in Sierra Leone. Create a formal, automated survey plan document for a client named ${userName}.
+        const prompt = `You are a professional land surveyor in ${countryName}. Create a formal, automated survey plan document for a client named ${userName}.
 
 **Client:** ${userName}
 **Total Area:** ${landSize} hectares
-**Location:** Bonthe District, Sierra Leone (Assumed)
+**Country:** ${countryName}
 
 The document must include the following sections, formatted professionally with proper spacing and headings:
 1.  **Title:** "AUTOMATED LAND SURVEY PLAN".
 2.  **Client Details:** Client's Name and Date of Survey (use today's date).
-3.  **Property Description:** A general description of the land's location within Bonthe District.
+3.  **Property Description:** A general description of the land's location.
 4.  **Boundary Coordinates:** A crucial section listing the precise geographical demarcation points. Format this section exactly as follows, using the data provided:
     
     BEGIN BOUNDARY COORDINATES
@@ -1139,7 +1245,7 @@ The document must include the following sections, formatted professionally with 
 ${coordinatesText}
     END BOUNDARY COORDINATES
 
-5.  **Land Suitability Analysis:** Suggest crops that grow well in the Bonthe District soil and climate (e.g., rice, cassava, sweet potatoes, palm oil).
+5.  **Land Suitability Analysis:** Suggest crops that grow well in the local soil and climate of ${countryName}.
 6.  **Declaration of Survey:** A formal statement of accuracy regarding the automated survey.
 7.  **Surveyor's Signature:** A closing section for a signature.
 
@@ -1292,7 +1398,7 @@ setCurrentSurveyGeoJSON(survey.geojson);
               <input 
                 type="text" 
                 className="input" 
-                placeholder="Search for a village or town..." 
+                placeholder="Search for a town or city..." 
                 value={locationQuery} 
                 onChange={e => setLocationQuery(e.target.value)} 
               />
@@ -1408,7 +1514,15 @@ setCurrentSurveyGeoJSON(survey.geojson);
 };
 
 
-const AIHubPage = ({ language, setLanguage }: { language: string; setLanguage: (lang: string) => void; }) => {
+const AIHubPage = ({
+    language, setLanguage,
+    selectedCountry, setSelectedCountry,
+    availableLanguages, countryName
+} : {
+    language: string; setLanguage: (l: string) => void;
+    selectedCountry: string; setSelectedCountry: (c: string) => void;
+    availableLanguages: any[]; countryName: string;
+}) => {
   const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<{role: string; text: string}[]>([]);
   const [input, setInput] = useState('');
@@ -1418,14 +1532,15 @@ const AIHubPage = ({ language, setLanguage }: { language: string; setLanguage: (
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   useEffect(() => {
-    const langName = languages.find(l => l.code === language)?.name || 'English';
+    const langName = availableLanguages.find(l => l.code === language)?.name || 'English';
     const newChat = ai.chats.create({
         model: 'gemini-2.5-flash',
         config: {
-            systemInstruction: `You are an expert agricultural assistant for farmers in West Africa. Your name is 'FarmHuub Agri-Bot'. Answer questions about agriculture, crop diseases, food production, supply chains, and climate change. Provide helpful, accurate, and easy-to-understand information tailored to the local context. The user has selected their language as ${langName}. You MUST respond in ${langName}. Start your very first message by introducing yourself in ${langName}.`
+            systemInstruction: `You are an expert agricultural assistant for farmers. Your name is 'FarmHuub Agri-Bot'. Answer questions about agriculture, crop diseases, food production, supply chains, and climate change. Provide helpful, accurate, and easy-to-understand information tailored to the user's local context in ${countryName}. The user has selected their language as ${langName}. You MUST respond in ${langName}. Start your very first message by introducing yourself in ${langName}.`
         },
     });
     setChat(newChat);
+    setMessages([]); // Clear previous chat history
 
     setLoading(true);
     newChat.sendMessage({message: "Hello!"}).then(response => {
@@ -1437,7 +1552,7 @@ const AIHubPage = ({ language, setLanguage }: { language: string; setLanguage: (
         setLoading(false);
     });
 
-  }, [language]);
+  }, [language, countryName]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1516,7 +1631,10 @@ const AIHubPage = ({ language, setLanguage }: { language: string; setLanguage: (
   return (
       <div style={{display: 'flex', flexDirection: 'column', height: 'calc(100vh - 200px)'}}>
         <h2>AI Agri-Bot</h2>
-        <LanguageSelector language={language} setLanguage={setLanguage} />
+        <SettingsBar 
+            selectedCountry={selectedCountry} setSelectedCountry={setSelectedCountry}
+            availableLanguages={availableLanguages} language={language} setLanguage={setLanguage}
+        />
         <div className="chat-window">
             <div className="chat-messages">
                 {messages.map((msg, index) => (
@@ -2534,16 +2652,23 @@ const FarmAdminPage = ({ addCommunityPost, logo, onLogoChange }: { addCommunityP
 };
 
 // --- NEW CLIMATE PAGE ---
-const ClimatePage = ({ userTier, language, setLanguage }: { userTier: 'free' | 'premium', language: string; setLanguage: (lang: string) => void; }) => {
+const ClimatePage = ({ 
+    userTier, language, setLanguage, 
+    selectedCountry, setSelectedCountry, availableLanguages, countryName
+} : { 
+    userTier: 'free' | 'premium', language: string; setLanguage: (l: string) => void; 
+    selectedCountry: string; setSelectedCountry: (c: string) => void;
+    availableLanguages: any[]; countryName: string;
+}) => {
   const [activeSubTab, setActiveSubTab] = useState('weather');
 
   const renderSubPage = () => {
     switch (activeSubTab) {
-      case 'weather': return <WeatherSubPage language={language} />;
-      case 'wastelands': return <WastelandsSubPage language={language} />;
-      case 'updates': return <UpdatesSubPage language={language} />;
-      case 'grants': return <GrantsSubPage userTier={userTier} language={language} />;
-      default: return <WeatherSubPage language={language} />;
+      case 'weather': return <WeatherSubPage language={language} countryName={countryName} />;
+      case 'wastelands': return <WastelandsSubPage language={language} countryName={countryName} />;
+      case 'updates': return <UpdatesSubPage language={language} countryName={countryName} />;
+      case 'grants': return <GrantsSubPage userTier={userTier} language={language} countryName={countryName} />;
+      default: return <WeatherSubPage language={language} countryName={countryName} />;
     }
   };
   
@@ -2557,7 +2682,10 @@ const ClimatePage = ({ userTier, language, setLanguage }: { userTier: 'free' | '
   return (
     <div>
       <h2>Climate Hub</h2>
-       <LanguageSelector language={language} setLanguage={setLanguage} />
+      <SettingsBar 
+            selectedCountry={selectedCountry} setSelectedCountry={setSelectedCountry}
+            availableLanguages={availableLanguages} language={language} setLanguage={setLanguage}
+      />
       <div className="sub-nav">
         {tabs.map(tab => (
           <button 
@@ -2577,12 +2705,16 @@ const ClimatePage = ({ userTier, language, setLanguage }: { userTier: 'free' | '
   );
 };
 
-const WeatherSubPage = ({ language }: { language: string }) => {
-    const [location, setLocation] = useState('Bonthe, Sierra Leone');
+const WeatherSubPage = ({ language, countryName }: { language: string, countryName: string }) => {
+    const [location, setLocation] = useState(countryName);
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState('');
     const [error, setError] = useState('');
     const [period, setPeriod] = useState('');
+    
+    useEffect(() => {
+        setLocation(countryName);
+    }, [countryName]);
 
     const handleGetAdvice = async (timeframe: string) => {
         if (!location) {
@@ -2595,11 +2727,11 @@ const WeatherSubPage = ({ language }: { language: string }) => {
         setPeriod(timeframe);
 
         try {
-            const langName = languages.find(l => l.code === language)?.name || 'English';
-            const prompt = `You are a climate and agriculture expert for West Africa.
+            const langName = countries.flatMap(c => c.languages).find(l => l.code === language)?.name || 'English';
+            const prompt = `You are a climate and agriculture expert for ${countryName}.
 Generate a plausible weather forecast and actionable farming advice for **${location}** for the following period: **${timeframe}**.
 
-The advice must be specific, practical, and tailored to crops commonly grown in Sierra Leone (like cassava, rice, palm oil, groundnuts).
+The advice must be specific, practical, and tailored to crops commonly grown in ${countryName}.
 For example, if there's high heat, suggest specific irrigation or mulching techniques. If there's heavy rain, advise on drainage and disease prevention.
 
 Format the response clearly with a "Weather Outlook" section and a "Farming Advisory" section.
@@ -2648,7 +2780,7 @@ Respond in ${langName}.
     );
 };
 
-const WastelandsSubPage = ({ language }: { language: string }) => {
+const WastelandsSubPage = ({ language, countryName }: { language: string, countryName: string }) => {
     const mapRef = useRef<any>(null);
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(false);
@@ -2706,9 +2838,9 @@ const WastelandsSubPage = ({ language }: { language: string }) => {
         if (mapRef.current) mapRef.current.closePopup();
 
         try {
-            const langName = languages.find(l => l.code === language)?.name || 'English';
-            const prompt = `You are an expert in land reclamation and soil science, specializing in post-mining environments in West Africa.
-The selected location is a former **${site.type}** mining site near **${site.name}, Sierra Leone**. The land is currently barren and considered a wasteland.
+            const langName = countries.flatMap(c => c.languages).find(l => l.code === language)?.name || 'English';
+            const prompt = `You are an expert in land reclamation and soil science, specializing in post-mining environments in West Africa, particularly ${countryName}.
+The selected location is a former **${site.type}** mining site near **${site.name}**. The land is currently barren and considered a wasteland.
 Provide a detailed, step-by-step reclamation plan to make this land useful for agriculture again. The plan should be practical for local communities.
 
 Include the following sections:
@@ -2758,7 +2890,7 @@ Respond in ${langName}.
     );
 };
 
-const UpdatesSubPage = ({ language }: { language: string }) => {
+const UpdatesSubPage = ({ language, countryName }: { language: string, countryName: string }) => {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState('');
     const [error, setError] = useState('');
@@ -2768,8 +2900,8 @@ const UpdatesSubPage = ({ language }: { language: string }) => {
         setResult('');
         setError('');
         try {
-            const langName = languages.find(l => l.code === language)?.name || 'English';
-            const prompt = `You are an agricultural and climate news analyst. Provide a concise daily briefing on new trends and important updates regarding climate, agriculture, and food security relevant to Sierra Leone and West Africa.
+            const langName = countries.flatMap(c => c.languages).find(l => l.code === language)?.name || 'English';
+            const prompt = `You are an agricultural and climate news analyst. Provide a concise daily briefing on new trends and important updates regarding climate, agriculture, and food security relevant to ${countryName} and its region.
 Include at least one global story and explain its local implications.
 Format the output with clear, engaging headings for each news item.
 Respond in ${langName}.
@@ -2788,7 +2920,7 @@ Respond in ${langName}.
          <>
             <div className="card">
                 <h3>Daily Agri-Climate Updates</h3>
-                <p className="card-subtitle">Get the latest news and trends affecting farming in Sierra Leone and worldwide.</p>
+                <p className="card-subtitle">Get the latest news and trends affecting farming in your country and worldwide.</p>
                 <button className="button" onClick={handleGetUpdates} disabled={loading}>
                     <i className="fa-solid fa-satellite-dish" style={{marginRight: '8px'}}></i>
                     {loading ? "Fetching Briefing..." : "Get Today's Briefing"}
@@ -2816,7 +2948,7 @@ Respond in ${langName}.
 
 type Grant = { name: string; funder: string; focus: string; description: string };
 
-const GrantsSubPage = ({ userTier, language }: { userTier: 'free' | 'premium', language: string }) => {
+const GrantsSubPage = ({ userTier, language, countryName }: { userTier: 'free' | 'premium', language: string, countryName: string }) => {
     const [vision, setVision] = useState('');
     const [loading, setLoading] = useState(false);
     const [grants, setGrants] = useState<Grant[]>([]);
@@ -2845,7 +2977,7 @@ const GrantsSubPage = ({ userTier, language }: { userTier: 'free' | 'premium', l
         setShowProposalBuilder(false);
 
         try {
-            const prompt = `You are a grant-finding assistant for agricultural businesses in Sierra Leone. Based on the user's farm profile below, invent a list of 2 plausible, fictional grants that are a good match.
+            const prompt = `You are a grant-finding assistant for agricultural businesses in ${countryName}. Based on the user's farm profile below, invent a list of 2 plausible, fictional grants that are a good match.
 
 User's Farm Profile: "${vision}"
 
@@ -2884,8 +3016,8 @@ Do not include any text outside of the JSON array.
         setDraftError('');
 
         try {
-            const langName = languages.find(l => l.code === language)?.name || 'English';
-            const prompt = `You are an expert grant writer with extensive experience in securing funding from major international organizations like USAID, the World Bank, and the Bill & Melinda Gates Foundation. Your specialty is agriculture in West Africa.
+            const langName = countries.flatMap(c => c.languages).find(l => l.code === language)?.name || 'English';
+            const prompt = `You are an expert grant writer with extensive experience in securing funding from major international organizations like USAID, the World Bank, and the Bill & Melinda Gates Foundation. Your specialty is agriculture in ${countryName}.
 
 Your task is to draft a comprehensive, professional, and persuasive grant proposal based on the applicant's profile and the grant's details. The proposal must be detailed, well-structured, and at least 800 words long.
 
@@ -2905,7 +3037,7 @@ Please structure the proposal with the following sections, using clear headings 
 
 1.  **COVER LETTER:** A brief, formal introductory letter addressed to the funding organization.
 2.  **EXECUTIVE SUMMARY:** A concise overview of the entire proposal, highlighting the problem, the proposed solution, key objectives, and the total funding requested.
-3.  **INTRODUCTION & PROBLEM STATEMENT:** A detailed description of the agricultural challenges the applicant is addressing. Use plausible statistics and context relevant to Sierra Leone. Explain why this project is necessary.
+3.  **INTRODUCTION & PROBLEM STATEMENT:** A detailed description of the agricultural challenges the applicant is addressing. Use plausible statistics and context relevant to ${countryName}. Explain why this project is necessary.
 4.  **PROJECT GOALS AND OBJECTIVES:** Clearly define the primary goal of the project. List several specific, measurable, achievable, relevant, and time-bound (SMART) objectives.
 5.  **METHODOLOGY & ACTIVITIES:** Describe the specific activities that will be undertaken to achieve the objectives. This should be a step-by-step plan of action.
 6.  **MONITORING AND EVALUATION (M&E) PLAN:** Explain how the project's success will be tracked and measured. What are the key performance indicators (KPIs)?
@@ -3494,11 +3626,24 @@ const PremiumLockPage = ({ setActiveTab }: { setActiveTab: (tab: string) => void
   </div>
 );
 
-const UpgradePage = ({ onUpgrade }: { onUpgrade: () => void }) => {
+const UpgradePage = ({ onUpgrade, country }: { onUpgrade: () => void, country: any }) => {
     const [plan, setPlan] = useState('yearly');
     const [paymentMethod, setPaymentMethod] = useState('card');
     const [paymentProof, setPaymentProof] = useState<File | null>(null);
     const [proofPreview, setProofPreview] = useState<string | null>(null);
+    
+    const basePricesUSD = { monthly: 10, yearly: 100 };
+
+    const formatLocalCurrency = (amount: number) => {
+        const localAmount = amount * country.exchangeRateToUSD;
+        return new Intl.NumberFormat(undefined, {
+            style: 'currency',
+            currency: country.currency.code,
+        }).format(localAmount);
+    };
+    
+    const monthlyPrice = formatLocalCurrency(basePricesUSD.monthly);
+    const yearlyPrice = formatLocalCurrency(basePricesUSD.yearly);
 
     const handleProofChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -3527,6 +3672,8 @@ const UpgradePage = ({ onUpgrade }: { onUpgrade: () => void }) => {
         onUpgrade();
     };
     
+    const manualPaymentMethods = ['moneygram', 'westernunion', 'worldremit', 'ria', 'afrointernational', 'bank', 'mobile'];
+    
     return (
         <div>
             <h2>Upgrade to FarmHuub Premium</h2>
@@ -3535,14 +3682,14 @@ const UpgradePage = ({ onUpgrade }: { onUpgrade: () => void }) => {
                 <div className="plan-selector">
                     <div className={`plan-card ${plan === 'monthly' ? 'selected' : ''}`} onClick={() => setPlan('monthly')}>
                         <h4>Monthly</h4>
-                        <p className="price">$10<span>/month</span></p>
-                        <p className="billing-info">Billed every month</p>
+                        <p className="price">{monthlyPrice}<span>/month</span></p>
+                        <p className="billing-info">(approx. ${basePricesUSD.monthly} USD)</p>
                     </div>
                     <div className={`plan-card ${plan === 'yearly' ? 'selected' : ''}`} onClick={() => setPlan('yearly')}>
                          <div className="best-value-badge">Best Value</div>
                         <h4>Yearly</h4>
-                        <p className="price">$100<span>/year</span></p>
-                        <p className="billing-info">Save $20 annually</p>
+                        <p className="price">{yearlyPrice}<span>/year</span></p>
+                        <p className="billing-info">(approx. ${basePricesUSD.yearly} USD)</p>
                     </div>
                 </div>
             </div>
@@ -3551,8 +3698,11 @@ const UpgradePage = ({ onUpgrade }: { onUpgrade: () => void }) => {
                 <h3>Payment Details</h3>
                 <div className="sub-nav payment-tabs">
                     <button className={`sub-nav-button ${paymentMethod === 'card' ? 'active' : ''}`} onClick={() => setPaymentMethod('card')}><i className="fa-solid fa-credit-card"></i> Card</button>
-                    <button className={`sub-nav-button ${paymentMethod === 'bank' ? 'active' : ''}`} onClick={() => setPaymentMethod('bank')}><i className="fa-solid fa-building-columns"></i> Bank</button>
-                    <button className={`sub-nav-button ${paymentMethod === 'paypal' ? 'active' : ''}`} onClick={() => setPaymentMethod('paypal')}><i className="fa-brands fa-paypal"></i> PayPal</button>
+                    <button className={`sub-nav-button ${paymentMethod === 'moneygram' ? 'active' : ''}`} onClick={() => setPaymentMethod('moneygram')}>MoneyGram</button>
+                    <button className={`sub-nav-button ${paymentMethod === 'westernunion' ? 'active' : ''}`} onClick={() => setPaymentMethod('westernunion')}>Western Union</button>
+                    <button className={`sub-nav-button ${paymentMethod === 'worldremit' ? 'active' : ''}`} onClick={() => setPaymentMethod('worldremit')}>World Remit</button>
+                    <button className={`sub-nav-button ${paymentMethod === 'ria' ? 'active' : ''}`} onClick={() => setPaymentMethod('ria')}>Ria</button>
+                    <button className={`sub-nav-button ${paymentMethod === 'afrointernational' ? 'active' : ''}`} onClick={() => setPaymentMethod('afrointernational')}>Afro Intl.</button>
                     <button className={`sub-nav-button ${paymentMethod === 'mobile' ? 'active' : ''}`} onClick={() => setPaymentMethod('mobile')}><i className="fa-solid fa-mobile-screen-button"></i> Mobile</button>
                 </div>
                 
@@ -3566,32 +3716,19 @@ const UpgradePage = ({ onUpgrade }: { onUpgrade: () => void }) => {
                             </div>
                         </form>
                     )}
-                    {paymentMethod === 'bank' && (
+                    {manualPaymentMethods.includes(paymentMethod) && (
                         <div className="bank-details">
-                            <p>Please make a direct bank transfer to the following account:</p>
-                            <ul>
-                                <li><strong>Bank Name:</strong> Guaranty Trust Bank</li>
-                                <li><strong>Account Number:</strong> 2053510116110</li>
-                                <li><strong>BBAN:</strong> 005205000050924031</li>
-                                <li><strong>SWIFT Code:</strong> GTB-SL-FR</li>
+                            <p>Please use your preferred service to send the equivalent of <strong>{plan === 'monthly' ? `$${basePricesUSD.monthly}` : `$${basePricesUSD.yearly}`} USD</strong>.</p>
+                             <p>After payment, send the transaction reference/receipt via:</p>
+                             <ul>
+                                <li><strong>Email:</strong> ifeasalone@gmail.com</li>
+                                <li><strong>WhatsApp:</strong> +232 88 635 309</li>
                             </ul>
-                            <p>Use your email address as the payment reference.</p>
+                            <p>Then, upload the same receipt below for verification.</p>
                         </div>
                     )}
-                    {paymentMethod === 'paypal' && (
-                         <div className="bank-details">
-                            <p>Send your payment via PayPal to the following email address:</p>
-                             <p className="payment-highlight">lavalieemmauel@gmail.com</p>
-                        </div>
-                    )}
-                    {paymentMethod === 'mobile' && (
-                        <div className="bank-details">
-                            <p>Pay using Africell's Afrimoney mobile money service to:</p>
-                            <p className="payment-highlight">+232 88 635 309</p>
-                        </div>
-                    )}
-
-                    {paymentMethod !== 'card' && (
+                    
+                    {manualPaymentMethods.includes(paymentMethod) && (
                         <div className="payment-proof-uploader">
                             <h4>Upload Payment Confirmation</h4>
                             <p>Please upload a screenshot or document (PDF, JPG, PNG) of your transaction receipt.</p>
@@ -3665,7 +3802,18 @@ const App = () => {
   const [userTier, setUserTier] = useState<'free' | 'premium'>('free');
   const [businessLogo, setBusinessLogo] = useState<string | null>(localStorage.getItem('farmHubLogo'));
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [selectedCountryCode, setSelectedCountryCode] = useState('SL');
   const [language, setLanguage] = useState('en-US');
+
+  const currentCountry = useMemo(() => countries.find(c => c.code === selectedCountryCode) || countries[0], [selectedCountryCode]);
+  const availableLanguages = useMemo(() => currentCountry.languages, [currentCountry]);
+
+  useEffect(() => {
+    // When country changes, set language to the first available language for that country
+    if (availableLanguages.length > 0) {
+        setLanguage(availableLanguages[0].code);
+    }
+  }, [selectedCountryCode, availableLanguages]);
   
   const initialPosts = [
     { id: 1, author: "FarmConnect SL", avatar: "FC", content: "Great harvest of peppers this season! Ready for the market. #agriculture #sierraleone", image: true },
@@ -3709,16 +3857,25 @@ const App = () => {
     }
     
     switch (activeTab) {
-        case 'scan': return <ScanPage />;
-        case 'blend': return <BlendPage />;
-        case 'land': return <LandPage />;
-        case 'climate': return <ClimatePage userTier={userTier} language={language} setLanguage={setLanguage} />;
-        case 'community': return <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} />;
-        case 'ai': return <AIHubPage language={language} setLanguage={setLanguage} />;
+        case 'scan': return <ScanPage countryName={currentCountry.name} />;
+        case 'blend': return <BlendPage countryName={currentCountry.name} />;
+        case 'land': return <LandPage countryName={currentCountry.name} />;
+        case 'climate': return <ClimatePage 
+            userTier={userTier} 
+            language={language} setLanguage={setLanguage} 
+            selectedCountry={selectedCountryCode} setSelectedCountry={setSelectedCountryCode}
+            availableLanguages={availableLanguages} countryName={currentCountry.name}
+        />;
+        case 'community': return <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} countryName={currentCountry.name} />;
+        case 'ai': return <AIHubPage 
+            language={language} setLanguage={setLanguage} 
+            selectedCountry={selectedCountryCode} setSelectedCountry={setSelectedCountryCode}
+            availableLanguages={availableLanguages} countryName={currentCountry.name}
+        />;
         case 'agent': return <CallAgentPage userTier={userTier} setActiveTab={setActiveTab} />;
         case 'admin': return <FarmAdminPage addCommunityPost={addCommunityPost} logo={businessLogo} onLogoChange={handleLogoFileChange} />;
-        case 'upgrade': return userTier === 'free' ? <UpgradePage onUpgrade={handleUpgrade} /> : <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} />;
-        default: return <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} />;
+        case 'upgrade': return userTier === 'free' ? <UpgradePage onUpgrade={handleUpgrade} country={currentCountry} /> : <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} countryName={currentCountry.name} />;
+        default: return <CommunityPage communityPosts={communityPosts} addCommunityPost={addCommunityPost} countryName={currentCountry.name} />;
     }
   };
 
